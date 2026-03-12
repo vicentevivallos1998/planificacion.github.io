@@ -1,0 +1,611 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Planificación Semanal de Personal</title>
+<style>
+body{font-family:Arial,Helvetica,sans-serif;background:#f4f6f8;margin:0;padding:20px}
+h1{text-align:center}
+.container{max-width:1250px;margin:auto}
+.controls{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:15px}
+
+.weekBar{display:grid;grid-template-columns:repeat(7,1fr);gap:5px;margin-bottom:15px}
+.dayBox{background:white;border:1px solid #ccc;border-radius:6px;padding:8px;text-align:center;font-size:14px}
+.dayName{font-weight:bold;color:#2c3e50}
+
+ table{width:100%;border-collapse:collapse;background:white}
+th,td{border:1px solid #ddd;padding:8px;text-align:center}
+th{background:#2c3e50;color:white}
+input{width:100%;border:none;text-align:center;padding:4px}
+button{padding:8px 14px;border:none;border-radius:6px;background:#2c3e50;color:white;cursor:pointer}
+
+.weekButton{
+ font-size:18px;
+ padding:14px 22px;
+ background:#1d6fd8;
+ display:flex;
+ align-items:center;
+ gap:10px;
+}
+
+button:hover{opacity:0.9}
+
+.summary{margin-top:20px}
+.summary td{font-weight:bold}
+
+.available{background:#d4edda}
+.unavailable{background:#f8d7da}
+
+.esr{background:#ffe066 !important;font-weight:bold}
+.esa{background:#74c0fc !important;font-weight:bold}
+
+.modal{position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);display:none;align-items:center;justify-content:center}
+.modalContent{background:white;padding:20px;border-radius:8px;max-height:80vh;overflow:auto;width:700px}
+.staffTable input{border:1px solid #ccc}
+
+.weekBox{
+ background:white;
+ border:1px solid #ccc;
+ border-radius:6px;
+ padding:6px;
+ font-size:12px;
+ cursor:pointer;
+ text-align:center;
+}
+
+.weekPlanned{
+ background:#b2f2bb;
+}
+
+.weekEmpty{
+ background:#f1f3f5;
+}
+
+.weekHidden{
+ position:absolute;
+ opacity:0;
+ pointer-events:none;
+}
+</style>
+</head>
+<body>
+<div class="container">
+<h1>Planificación Semanal de Personal</h1>
+
+<div class="controls">
+<label>Semana:</label>
+
+<!-- input oculto que realmente maneja la semana -->
+<input type="week" id="weekPicker" class="weekHidden" onchange="updateWeekView();loadWeek();">
+
+<button class="weekButton" onclick="openWeekPicker()">📅 Cambiar semana</button>
+
+
+
+<button onclick="saveWeek()">Guardar semana</button>
+<button onclick="openStaffEditor()">Editar personal</button>
+<button onclick="openStats()">Estadísticas ESR/ESA</button>
+<button onclick="copyPreviousWeek()">Copiar semana anterior</button>
+</div>
+
+<div style="display:flex;gap:10px;align-items:center;margin-bottom:10px">
+<button onclick="changeYear(-1)">◀ Año</button>
+<strong id="yearLabel"></strong>
+<button onclick="changeYear(1)">Año ▶</button>
+</div>
+<div id="weekCalendar" style="display:grid;grid-template-columns:repeat(10,1fr);gap:6px;margin-bottom:15px"></div>
+<div class="weekBar" id="weekBar"></div>
+
+<table>
+<thead>
+<tr>
+<th>Grado</th>
+<th>Nombre</th>
+<th>Lunes</th>
+<th>Martes</th>
+<th>Miércoles</th>
+<th>Jueves</th>
+<th>Viernes</th>
+<th>Sábado</th>
+<th>Domingo</th>
+</tr>
+</thead>
+<tbody id="bodyTable"></tbody>
+</table>
+
+<table class="summary">
+<tr>
+<td>Disponible</td>
+<td id="disp0">0</td>
+<td id="disp1">0</td>
+<td id="disp2">0</td>
+<td id="disp3">0</td>
+<td id="disp4">0</td>
+<td id="disp5">0</td>
+<td id="disp6">0</td>
+</tr>
+<tr>
+<td>No disponible</td>
+<td id="nodisp0">0</td>
+<td id="nodisp1">0</td>
+<td id="nodisp2">0</td>
+<td id="nodisp3">0</td>
+<td id="nodisp4">0</td>
+<td id="nodisp5">0</td>
+<td id="nodisp6">0</td>
+</tr>
+</table>
+</div>
+
+<div class="modal" id="staffModal">
+<div class="modalContent">
+<h3>Editar Personal</h3>
+<table class="staffTable" id="staffTable">
+<thead>
+<tr>
+<th>#</th>
+<th>Grado</th>
+<th>Nombre</th>
+<th></th>
+</tr>
+</thead>
+<tbody></tbody>
+</table>
+<br>
+<button onclick="addStaffRow()">Agregar persona</button>
+<button onclick="saveStaff()">Guardar cambios</button>
+<button onclick="closeStaffEditor()">Cerrar</button>
+</div>
+</div>
+
+<div class="modal" id="statsModal">
+<div class="modalContent">
+<h3>Estadística de trabajos ESR / ESA</h3>
+<table id="statsTable">
+<thead>
+<tr>
+<th>Grado</th>
+<th>Nombre</th>
+<th>ESR</th>
+<th>ESA</th>
+</tr>
+</thead>
+<tbody></tbody>
+</table>
+<br>
+<button onclick="closeStats()">Cerrar</button>
+</div>
+</div>
+
+<script>
+
+// ====== SINCRONIZACIÓN CON GITHUB GIST ======
+// Crear un Gist en GitHub con un archivo llamado data.json
+// Colocar aquí el ID del Gist y un Personal Access Token con permiso "gist"
+
+const GIST_ID = "PEGAR_ID_GIST";
+const GITHUB_TOKEN = "PEGAR_TOKEN_GITHUB";
+
+let remoteData = {};
+
+const storage = {
+  async load(){
+    try{
+      const r = await fetch(`https://api.github.com/gists/${GIST_ID}`);
+      const j = await r.json();
+      const file = j.files && j.files["data.json"];
+      if(file && file.content){
+        remoteData = JSON.parse(file.content);
+      }
+    }catch(e){
+      console.warn("No se pudo cargar desde GitHub",e);
+    }
+  },
+
+  async save(){
+    try{
+      await fetch(`https://api.github.com/gists/${GIST_ID}`,{
+        method:"PATCH",
+        headers:{
+          "Authorization":"token "+GITHUB_TOKEN,
+          "Content-Type":"application/json"
+        },
+        body:JSON.stringify({
+          files:{
+            "data.json":{content:JSON.stringify(remoteData)}
+          }
+        })
+      });
+    }catch(e){
+      console.warn("No se pudo guardar en GitHub",e);
+    }
+  },
+
+  getItem(key){
+    return remoteData[key] ? JSON.stringify(remoteData[key]) : null;
+  },
+
+  setItem(key,value){
+    remoteData[key] = JSON.parse(value);
+    this.save();
+  },
+
+  removeItem(key){
+    delete remoteData[key];
+    this.save();
+  },
+
+  key(i){
+    return Object.keys(remoteData)[i];
+  },
+
+  get length(){
+    return Object.keys(remoteData).length;
+  }
+};
+
+const days = 7;
+
+let staff=[
+{grado:"SOF",nombre:"ROBERTO GARRIDO"},
+{grado:"SOF",nombre:"MARCELO CONTRERAS"},
+{grado:"SOF",nombre:"DANIEL LIZANA"},
+{grado:"SOF",nombre:"ROBERTO OTEIZA"},
+{grado:"SOF",nombre:"CARLOS MUÑOZ"},
+{grado:"SG1",nombre:"GUILLERMO MAITA"},
+{grado:"SG2",nombre:"JOSE PARRA"},
+{grado:"SG2",nombre:"SEBASTIAN MOYA"},
+{grado:"SG2",nombre:"MAURICIO MELL"},
+{grado:"SG2",nombre:"FERNANDO PARADA"},
+{grado:"SG2",nombre:"HAROLD MENESES"},
+{grado:"SG2",nombre:"LUIS ABURTO"},
+{grado:"CB1",nombre:"HERNAN MORALES"},
+{grado:"CB2",nombre:"CLAUDIO QUISPE"},
+{grado:"CB2",nombre:"JUAN LECAROS"},
+{grado:"CB2",nombre:"SEBASTIAN LIRA"},
+{grado:"CB2",nombre:"ALDO MANOSALVA"},
+{grado:"CB2",nombre:"MIGUEL FUENTEZ"},
+{grado:"CB2",nombre:"LUIS BLAS"},
+{grado:"CB2",nombre:"VICTOR BELMAR"},
+{grado:"CBO",nombre:"JULIO BOZZA"}
+];
+
+if(storage.getItem("staff_list")){
+ staff = JSON.parse(storage.getItem("staff_list"));
+}
+
+function getWeekKey(){
+ const week=document.getElementById("weekPicker").value;
+ if(!week){alert("Selecciona una semana");return null}
+ return "week_"+week;
+}
+
+function updateWeekView(){
+ const week=document.getElementById("weekPicker").value;
+ if(!week) return;
+
+ const [year,w]=week.split("-W");
+ const simple=new Date(year,0,1+(w-1)*7);
+ const dow=simple.getDay();
+ const start=new Date(simple);
+
+ if(dow<=4) start.setDate(simple.getDate()-simple.getDay()+1);
+ else start.setDate(simple.getDate()+8-simple.getDay());
+
+ const names=["Lun","Mar","Mié","Jue","Vie","Sáb","Dom"];
+ const bar=document.getElementById("weekBar");
+ bar.innerHTML="";
+
+ for(let i=0;i<7;i++){
+  const d=new Date(start);
+  d.setDate(start.getDate()+i);
+
+  const box=document.createElement("div");
+  box.className="dayBox";
+  box.innerHTML=`<div class='dayName'>${names[i]}</div>${d.toLocaleDateString()}`;
+  bar.appendChild(box);
+ }
+}
+
+function buildSchedule(data=null){
+ const tbody=document.getElementById("bodyTable");
+ tbody.innerHTML="";
+
+ staff.forEach((p,i)=>{
+  const tr=document.createElement("tr");
+
+  let row=`<td>${p.grado}</td>`;
+  row+=`<td>${p.nombre}</td>`;
+
+  for(let d=0;d<days;d++){
+   let val="";
+   if(data && data[i]) val=data[i][d+2]||"";
+
+   row+=`<td><input value="${val}" oninput="updateCell(this);updateSummary()"></td>`;
+  }
+
+  tr.innerHTML=row;
+  tbody.appendChild(tr);
+
+  const inputs=tr.querySelectorAll("input");
+  inputs.forEach(updateCell);
+ });
+
+ updateSummary();
+}
+
+function updateCell(input){
+ const v=input.value.trim().toUpperCase();
+
+ input.classList.remove("available","unavailable","esr","esa");
+
+ if(v==="" || v==="ESR"){
+  input.classList.add("available");
+ }else{
+  input.classList.add("unavailable");
+ }
+
+ if(v==="ESR") input.classList.add("esr");
+ if(v==="ESA") input.classList.add("esa");
+}
+
+function updateSummary(){
+ let disponible=new Array(days).fill(0);
+ let nodisponible=new Array(days).fill(0);
+
+ const rows=document.querySelectorAll("#bodyTable tr");
+
+ rows.forEach(r=>{
+  const inputs=r.querySelectorAll("input");
+
+  inputs.forEach((inp,i)=>{
+   const v=inp.value.trim().toUpperCase();
+
+   if(v==="" || v==="ESR") disponible[i]++;
+   else nodisponible[i]++;
+  });
+ });
+
+ for(let i=0;i<days;i++){
+  document.getElementById("disp"+i).innerText=disponible[i];
+  document.getElementById("nodisp"+i).innerText=nodisponible[i];
+ }
+}
+
+function saveWeek(){
+ const key=getWeekKey();
+ if(!key) return;
+
+ const rows=document.querySelectorAll("#bodyTable tr");
+ let data=[];
+ let hasData=false;
+
+ rows.forEach(r=>{
+  const inputs=r.querySelectorAll("input");
+  let row=["",""];
+
+  inputs.forEach(i=>{
+    const val=i.value.trim();
+    if(val!=="") hasData=true;
+    row.push(val);
+  });
+
+  data.push(row);
+ });
+
+ // si toda la semana está vacía se elimina
+ if(!hasData){
+   storage.removeItem(key);
+   alert("La semana quedó vacía y fue eliminada");
+ }else{
+   storage.setItem(key,JSON.stringify(data));
+   alert("Semana guardada");
+ }
+
+ renderWeekCalendar();
+}
+
+function loadWeek(){
+ const key=getWeekKey();
+ if(!key) return;
+
+ const saved=storage.getItem(key);
+
+ if(!saved){
+  buildSchedule();
+  return;
+ }
+
+ const data=JSON.parse(saved);
+ buildSchedule(data);
+}
+
+
+function newWeek(){
+ buildSchedule();
+}
+
+function copyPreviousWeek(){
+ const week=document.getElementById("weekPicker").value;
+ if(!week){
+  alert("Selecciona primero una semana");
+  return;
+ }
+
+ const [year,w]=week.split("-W");
+ const prevWeekNum = parseInt(w)-1;
+
+ if(prevWeekNum<=0){
+  alert("No existe semana anterior disponible");
+  return;
+ }
+
+ const prevKey = "week_"+year+"-W"+String(prevWeekNum).padStart(2,'0');
+ const currentKey = "week_"+week;
+
+ const prevData = storage.getItem(prevKey);
+
+ if(!prevData){
+  alert("La semana anterior no tiene planificación guardada");
+  return;
+ }
+
+ const data = JSON.parse(prevData);
+
+ storage.setItem(currentKey, JSON.stringify(data));
+ buildSchedule(data);
+ alert("Planificación copiada desde la semana anterior");
+}
+
+function openStats(){
+ const tbody=document.querySelector("#statsTable tbody");
+ tbody.innerHTML="";
+
+ let totals = staff.map(()=>({esr:0,esa:0}));
+
+ for(let i=0;i<storage.length;i++){
+   const key = storage.key(i);
+   if(!key.startsWith("week_")) continue;
+
+   const data = JSON.parse(storage.getItem(key));
+   if(!data) continue;
+
+   data.forEach((row,idx)=>{
+     if(!totals[idx]) return;
+
+     for(let d=2; d<row.length; d++){
+       const v = (row[d]||"").trim().toUpperCase();
+       if(v==="ESR") totals[idx].esr++;
+       if(v==="ESA") totals[idx].esa++;
+     }
+   });
+ }
+
+ staff.forEach((p,i)=>{
+   const tr=document.createElement("tr");
+   tr.innerHTML=`<td>${p.grado}</td><td>${p.nombre}</td><td>${totals[i].esr}</td><td>${totals[i].esa}</td>`;
+   tbody.appendChild(tr);
+ });
+
+ document.getElementById("statsModal").style.display="flex";
+}
+
+function closeStats(){
+ document.getElementById("statsModal").style.display="none";
+}
+
+function openStaffEditor(){
+ const modal=document.getElementById("staffModal");
+ const tbody=document.querySelector("#staffTable tbody");
+ tbody.innerHTML="";
+
+ staff.forEach((p,i)=>{
+  const tr=document.createElement("tr");
+  tr.innerHTML=`
+  <td>${i+1}</td>
+  <td><input value="${p.grado}"></td>
+  <td><input value="${p.nombre}"></td>
+  <td><button onclick="this.closest('tr').remove()">Eliminar</button></td>`;
+  tbody.appendChild(tr);
+ });
+
+ modal.style.display="flex";
+}
+
+function closeStaffEditor(){
+ document.getElementById("staffModal").style.display="none";
+}
+
+function addStaffRow(){
+ const tbody=document.querySelector("#staffTable tbody");
+ const tr=document.createElement("tr");
+ tr.innerHTML=`<td></td><td><input></td><td><input></td><td><button onclick="this.closest('tr').remove()">Eliminar</button></td>`;
+ tbody.appendChild(tr);
+}
+
+function saveStaff(){
+ const rows=document.querySelectorAll("#staffTable tbody tr");
+ staff=[];
+
+ rows.forEach(r=>{
+  const inputs=r.querySelectorAll("input");
+  const grado=inputs[0].value.trim();
+  const nombre=inputs[1].value.trim();
+
+  if(nombre!=="") staff.push({grado,nombre});
+ });
+
+ storage.setItem("staff_list",JSON.stringify(staff));
+ closeStaffEditor();
+ buildSchedule();
+}
+
+function openWeekPicker(){
+ const picker=document.getElementById("weekPicker");
+
+ // temporalmente habilitamos interacción
+ picker.style.pointerEvents="auto";
+ picker.style.opacity="1";
+ picker.style.position="fixed";
+ picker.style.left="50%";
+ picker.style.top="20px";
+ picker.style.transform="translateX(-50%)";
+
+ picker.focus();
+ picker.click();
+
+ // después de abrir el selector lo ocultamos nuevamente
+ setTimeout(()=>{
+   picker.style.opacity="0";
+   picker.style.pointerEvents="none";
+   picker.style.position="absolute";
+   picker.style.left="-9999px";
+ },200);
+}
+
+var currentYear = new Date().getFullYear();
+document.getElementById("yearLabel").innerText=currentYear;
+renderWeekCalendar();
+buildSchedule();
+
+function changeYear(delta){
+ currentYear+=delta;
+ document.getElementById("yearLabel").innerText=currentYear;
+ renderWeekCalendar();
+}
+
+function renderWeekCalendar(){
+ const cal=document.getElementById("weekCalendar");
+ cal.innerHTML="";
+
+ const year=currentYear;
+
+ for(let w=1; w<=52; w++){
+  const weekStr=year+"-W"+String(w).padStart(2,'0');
+  const key="week_"+weekStr;
+
+  const box=document.createElement("div");
+  box.className="weekBox";
+
+  if(storage.getItem(key)){
+   box.classList.add("weekPlanned");
+  }else{
+   box.classList.add("weekEmpty");
+  }
+
+  box.innerText="W"+w;
+
+  box.onclick=()=>{
+   document.getElementById("weekPicker").value=weekStr;
+   updateWeekView();
+   loadWeek();
+  };
+
+  cal.appendChild(box);
+ }
+}
+
+</script>
+</body>
+</html>
