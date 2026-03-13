@@ -4,7 +4,6 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Planificación Semanal de Personal</title>
-
 <style>
 body{font-family:Arial,Helvetica,sans-serif;background:#f4f6f8;margin:0;padding:20px}
 h1{text-align:center}
@@ -21,7 +20,15 @@ th{background:#2c3e50;color:white}
 input{width:100%;border:none;text-align:center;padding:4px}
 button{padding:8px 14px;border:none;border-radius:6px;background:#2c3e50;color:white;cursor:pointer}
 
-.weekButton{font-size:18px;padding:14px 22px;background:#1d6fd8;display:flex;align-items:center;gap:10px}
+.weekButton{
+ font-size:18px;
+ padding:14px 22px;
+ background:#1d6fd8;
+ display:flex;
+ align-items:center;
+ gap:10px;
+}
+
 button:hover{opacity:0.9}
 
 .summary{margin-top:20px}
@@ -37,14 +44,31 @@ button:hover{opacity:0.9}
 .modalContent{background:white;padding:20px;border-radius:8px;max-height:80vh;overflow:auto;width:700px}
 .staffTable input{border:1px solid #ccc}
 
-.weekBox{background:white;border:1px solid #ccc;border-radius:6px;padding:6px;font-size:12px;cursor:pointer;text-align:center}
-.weekPlanned{background:#b2f2bb}
-.weekEmpty{background:#f1f3f5}
+.weekBox{
+ background:white;
+ border:1px solid #ccc;
+ border-radius:6px;
+ padding:6px;
+ font-size:12px;
+ cursor:pointer;
+ text-align:center;
+}
 
-.weekHidden{position:absolute;opacity:0;pointer-events:none}
+.weekPlanned{
+ background:#b2f2bb;
+}
+
+.weekEmpty{
+ background:#f1f3f5;
+}
+
+.weekHidden{
+ position:absolute;
+ opacity:0;
+ pointer-events:none;
+}
 </style>
 </head>
-
 <body>
 <div class="container">
 <h1>Planificación Semanal de Personal</h1>
@@ -52,9 +76,13 @@ button:hover{opacity:0.9}
 <div class="controls">
 <label>Semana:</label>
 
+<!-- input oculto que realmente maneja la semana -->
 <input type="week" id="weekPicker" class="weekHidden" onchange="updateWeekView();loadWeek();">
 
 <button class="weekButton" onclick="openWeekPicker()">📅 Cambiar semana</button>
+
+
+
 <button onclick="saveWeek()">Guardar semana</button>
 <button onclick="openStaffEditor()">Editar personal</button>
 <button onclick="openStats()">Estadísticas ESR/ESA</button>
@@ -66,7 +94,6 @@ button:hover{opacity:0.9}
 <strong id="yearLabel"></strong>
 <button onclick="changeYear(1)">Año ▶</button>
 </div>
-
 <div id="weekCalendar" style="display:grid;grid-template-columns:repeat(10,1fr);gap:6px;margin-bottom:15px"></div>
 <div class="weekBar" id="weekBar"></div>
 
@@ -111,37 +138,101 @@ button:hover{opacity:0.9}
 </table>
 </div>
 
+<div class="modal" id="staffModal">
+<div class="modalContent">
+<h3>Editar Personal</h3>
+<table class="staffTable" id="staffTable">
+<thead>
+<tr>
+<th>#</th>
+<th>Grado</th>
+<th>Nombre</th>
+<th></th>
+</tr>
+</thead>
+<tbody></tbody>
+</table>
+<br>
+<button onclick="addStaffRow()">Agregar persona</button>
+<button onclick="saveStaff()">Guardar cambios</button>
+<button onclick="closeStaffEditor()">Cerrar</button>
+</div>
+</div>
+
+<div class="modal" id="statsModal">
+<div class="modalContent">
+<h3>Estadística de trabajos ESR / ESA</h3>
+<table id="statsTable">
+<thead>
+<tr>
+<th>Grado</th>
+<th>Nombre</th>
+<th>ESR</th>
+<th>ESA</th>
+</tr>
+</thead>
+<tbody></tbody>
+</table>
+<br>
+<button onclick="closeStats()">Cerrar</button>
+</div>
+</div>
+
 <script>
+const days = 7;
 
 // ===============================
-// CONFIGURACIÓN BASE DE DATOS
+// CONFIGURACIÓN GITHUB
+// Guarda datos en un archivo JSON dentro de tu repositorio
 // ===============================
 
-const DATABASE_URL = "https://console.firebase.google.com/u/0/project/planificador-personal-f6e48/database/planificador-personal-f6e48-default-rtdb/data/~2F";
+const GITHUB_OWNER = "vicentevivallos1998";
+const GITHUB_REPO = "planificacion.github.io";
+const FILE_PATH = "planificador_data.json";
+const GITHUB_TOKEN = "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";
 
+let githubSHA = null;
 let database = {};
 
 async function loadDatabase(){
- const res = await fetch(DATABASE_URL+".json");
+ try{
+
+ const res = await fetch(`https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}/contents/${FILE_PATH}`);
  const data = await res.json();
- database = data || {};
 
- if(database.staff_list) staff = database.staff_list;
+ if(data.content){
+  const decoded = atob(data.content);
+  database = JSON.parse(decoded);
+  githubSHA = data.sha;
+ }
 
- renderWeekCalendar();
+ }catch(e){
+  console.log("No existe base de datos aún, se creará",e);
+  database = {};
+ }
 }
 
 async function saveDatabase(){
- await fetch(DATABASE_URL+".json",{
-  method:"PUT",
-  headers:{"Content-Type":"application/json"},
-  body:JSON.stringify(database)
- });
-}
+ const content = btoa(JSON.stringify(database,null,2));
 
-// ===============================
-// PERSONAL
-// ===============================
+ const body = {
+  message: "actualizar planificacion",
+  content: content,
+  sha: githubSHA
+ };
+
+ const res = await fetch(`https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}/contents/${FILE_PATH}` ,{
+  method:"PUT",
+  headers:{
+   "Content-Type":"application/json",
+   "Authorization":"token "+GITHUB_TOKEN
+  },
+  body:JSON.stringify(body)
+ });
+
+ const result = await res.json();
+ githubSHA = result.content.sha;
+}
 
 let staff=[
 {grado:"SOF",nombre:"ROBERTO GARRIDO"},
@@ -166,10 +257,6 @@ let staff=[
 {grado:"CB2",nombre:"VICTOR BELMAR"},
 {grado:"CBO",nombre:"JULIO BOZZA"}
 ];
-
-// ===============================
-// SEMANA
-// ===============================
 
 function getWeekKey(){
  const week=document.getElementById("weekPicker").value;
@@ -214,9 +301,9 @@ function buildSchedule(data=null){
   let row=`<td>${p.grado}</td>`;
   row+=`<td>${p.nombre}</td>`;
 
-  for(let d=0;d<7;d++){
+  for(let d=0;d<days;d++){
    let val="";
-   if(data && data[i]) val=data[i][d]||"";
+   if(data && data[i]) val=data[i][d+2]||"";
 
    row+=`<td><input value="${val}" oninput="updateCell(this);updateSummary()"></td>`;
   }
@@ -233,18 +320,22 @@ function buildSchedule(data=null){
 
 function updateCell(input){
  const v=input.value.trim().toUpperCase();
+
  input.classList.remove("available","unavailable","esr","esa");
 
- if(v==="" || v==="ESR") input.classList.add("available");
- else input.classList.add("unavailable");
+ if(v==="" || v==="ESR"){
+  input.classList.add("available");
+ }else{
+  input.classList.add("unavailable");
+ }
 
  if(v==="ESR") input.classList.add("esr");
  if(v==="ESA") input.classList.add("esa");
 }
 
 function updateSummary(){
- let disponible=new Array(7).fill(0);
- let nodisponible=new Array(7).fill(0);
+ let disponible=new Array(days).fill(0);
+ let nodisponible=new Array(days).fill(0);
 
  const rows=document.querySelectorAll("#bodyTable tr");
 
@@ -259,15 +350,11 @@ function updateSummary(){
   });
  });
 
- for(let i=0;i<7;i++){
+ for(let i=0;i<days;i++){
   document.getElementById("disp"+i).innerText=disponible[i];
   document.getElementById("nodisp"+i).innerText=nodisponible[i];
  }
 }
-
-// ===============================
-// GUARDAR / CARGAR
-// ===============================
 
 async function saveWeek(){
  const key=getWeekKey();
@@ -278,7 +365,7 @@ async function saveWeek(){
 
  rows.forEach(r=>{
   const inputs=r.querySelectorAll("input");
-  let row=[];
+  let row=["",""];
 
   inputs.forEach(i=> row.push(i.value.trim()));
 
@@ -287,27 +374,26 @@ async function saveWeek(){
 
  database[key]=data;
  await saveDatabase();
- renderWeekCalendar();
- alert("Semana guardada en la nube");
+
+ alert("Semana guardada en GitHub");
 }
 
 function loadWeek(){
  const key=getWeekKey();
- if(!key) return;
 
- const data=database[key];
-
- if(!data){
+ if(!database[key]){
   buildSchedule();
   return;
  }
 
- buildSchedule(data);
+ buildSchedule(database[key]);
 }
 
-// ===============================
-// CALENDARIO
-// ===============================
+async function init(){
+ await loadDatabase();
+ renderWeekCalendar();
+ buildSchedule();
+}
 
 var currentYear = new Date().getFullYear();
 document.getElementById("yearLabel").innerText=currentYear;
@@ -322,9 +408,10 @@ function renderWeekCalendar(){
  const cal=document.getElementById("weekCalendar");
  cal.innerHTML="";
 
- for(let w=1; w<=52; w++){
+ const year=currentYear;
 
-  const weekStr=currentYear+"-W"+String(w).padStart(2,'0');
+ for(let w=1; w<=52; w++){
+  const weekStr=year+"-W"+String(w).padStart(2,'0');
   const key="week_"+weekStr;
 
   const box=document.createElement("div");
@@ -345,16 +432,10 @@ function renderWeekCalendar(){
  }
 }
 
-// ===============================
-// INICIO
-// ===============================
-
-buildSchedule();
-loadDatabase();
+init();
 
 </script>
 </body>
 </html>
-
 
 
